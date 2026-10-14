@@ -21,6 +21,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync, watch as fsWatch, type Stats } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { styleText } from "node:util";
 import { createHash } from "node:crypto";
 
 // --- Réglages ---
@@ -36,13 +37,18 @@ const FILE_BATCH = 32; // fichiers écrits par transaction (si Ollama plante, le
 const CANDIDATES = 50; // résultats pris dans chaque liste avant fusion RRF
 const RRF_K = 60; // constante standard du RRF
 
+// Balises autour des termes trouvés dans Hit.snippet (caractères de contrôle :
+// jamais dans du Markdown, contrairement à [ ] qui servent aux liens)
+export const MARK_START = "\u0002";
+export const MARK_END = "\u0003";
+
 export type Mode = "hybrid" | "bm25" | "vector";
 
 export interface Hit {
   // bm25 : plus négatif = mieux | vector : cosinus, plus haut = mieux | hybrid : RRF, plus haut = mieux
   score: number;
   path: string;
-  snippet: string;
+  snippet: string; // termes trouvés entre MARK_START et MARK_END
   ranks?: { bm25?: number; vector?: number }; // rang dans chaque liste (mode hybrid)
 }
 
@@ -526,14 +532,22 @@ function bm25Search(db: DatabaseSync, query: string, limit: number): Hit[] {
     .prepare(`
       SELECT bm25(docs, 0, 10, 1) AS score,
              path,
-             snippet(docs, 2, '[', ']', '…', 12) AS snippet
+             snippet(docs, 2, ?, ?, '…', 12) AS snippet
       FROM docs
       WHERE docs MATCH ?
       ORDER BY score
       LIMIT ?
     `)
-    .all(query, limit) as unknown as Hit[];
+    .all(MARK_START, MARK_END, query, limit) as unknown as Hit[];
   return rows.map((r) => ({ ...r, snippet: oneLine(r.snippet) }));
+}
+
+// Balise les mots de la requête dans un extrait vectoriel (FTS5 ne l'a pas produit).
+// Simple sous-chaîne, casse ignorée : « modèle » balisé dans « modèles ».
+function markTerms(text: string, query: string): string {
+  const words = (query.match(/[\p{L}\p{N}]+/gu) ?? []).filter((w) => !/^(AND|OR|NOT|NEAR)$/.test(w));
+  if (!words.length) return text;
+  return text.replace(new RegExp(words.join("|"), "giu"), (m) => MARK_START + m + MARK_END);
 }
 
 // Force brute : compare la requête à TOUS les chunks.
@@ -557,7 +571,7 @@ async function vectorSearch(db: DatabaseSync, query: string, limit: number): Pro
     if (!prev || score > prev.score) {
       const words = oneLine(r.text).split(" ");
       const excerpt = words.slice(0, 25).join(" ") + (words.length > 25 ? "…" : "");
-      best.set(r.path, { score, path: r.path, snippet: (r.heading ? `§ ${r.heading} — ` : "") + excerpt });
+      best.set(r.path, { score, path: r.path, snippet: markTerms((r.heading ? `§ ${r.heading} — ` : "") + excerpt, query) });
     }
   }
   return [...best.values()].sort((a, b) => b.score - a.score).slice(0, limit);
@@ -626,6 +640,27 @@ export async function search(
 // ============================================================================
 // CLI
 // ============================================================================
+// Terminal : chemin cliquable (lien OSC 8) + termes surlignés.
+// Tube ou fichier (agent, grep) : texte brut, termes entre [ ].
+// NO_COLOR / FORCE_COLOR (https://no-color.org) forcent l'un ou l'autre.
+function richOutput(): boolean {
+  if (process.env.NO_COLOR) return false;
+  if (process.env.FORCE_COLOR) return process.env.FORCE_COLOR !== "0";
+  return process.stdout.isTTY === true && process.stdout.hasColors();
+}
+
+export function formatHit(h: Hit, rich: boolean): string {
+  const ranks = h.ranks
+    ? ` (bm25 ${h.ranks.bm25 ? "#" + h.ranks.bm25 : "–"}, vec ${h.ranks.vector ? "#" + h.ranks.vector : "–"})`
+    : "";
+  const marks = new RegExp(`${MARK_START}(.*?)${MARK_END}`, "gs");
+  if (!rich) return `${h.score.toFixed(4)}${ranks} | ${h.path} | ${h.snippet.replace(marks, "[$1]")}`;
+  // OSC 8 : ESC ]8;;URL ESC \ texte ESC ]8;; ESC \ (texte normal si le terminal ne gère pas)
+  const link = `\x1b]8;;${pathToFileURL(h.path).href}\x1b\\${h.path}\x1b]8;;\x1b\\`;
+  const snippet = h.snippet.replace(marks, (_, t: string) => styleText(["bold", "yellow"], t, { validateStream: false }));
+  return `${h.score.toFixed(4)}${ranks} | ${link} | ${snippet}`;
+}
+
 function parseArgs(argv: string[]) {
   const flags = new Set<string>();
   const pos: string[] = [];
@@ -688,12 +723,8 @@ async function main(): Promise<void> {
     });
   } else if (cmd === "search" && arg) {
     const r = await search(arg, { limit: n ? Number(n) : 10, mode, dbPath: searchDb() });
-    for (const h of r.hits) {
-      const ranks = h.ranks
-        ? ` (bm25 ${h.ranks.bm25 ? "#" + h.ranks.bm25 : "–"}, vec ${h.ranks.vector ? "#" + h.ranks.vector : "–"})`
-        : "";
-      console.log(`${h.score.toFixed(4)}${ranks} | ${h.path} | ${h.snippet}`);
-    }
+    const rich = richOutput();
+    for (const h of r.hits) console.log(formatHit(h, rich));
   } else if (cmd === "optimize") {
     const db = searchDb();
     optimize(db);

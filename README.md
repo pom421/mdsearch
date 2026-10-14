@@ -62,6 +62,11 @@ Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 0.0328 (bm25 #1, vec #1) | /…/lora.md | # [LoRA] [LoRA] fine-tuning léger des modèles.
 ```
 
+- **Dans un terminal** : chemin **cliquable** (lien OSC 8 vers `file://…`, ⌘-clic
+  dans iTerm2, Ghostty, WezTerm, VS Code…) et termes trouvés **surlignés** (gras jaune).
+- **Hors terminal** (tube, fichier, agent) : texte brut ci-dessus, termes entre `[ ]`.
+- `NO_COLOR=1` force le texte brut, `FORCE_COLOR=1` la sortie enrichie.
+
 ### Syntaxe des requêtes BM25 (FTS5)
 
 - `lora fine` → les deux mots
@@ -74,12 +79,14 @@ Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 ### Utilisation en bibliothèque
 
 ```ts
-import { index, search } from "./src/mdsearch.ts";
+import { index, search, formatHit } from "./src/mdsearch.ts";
 
 await index("/chemin/wiki"); // → /chemin/wiki/.mdsearch.db
 const { mode, hits } = await search("automobile", { limit: 5, dbPath: "/chemin/wiki/.mdsearch.db" });
 // sans dbPath : findDb() remonte depuis process.cwd()
 // hits : { score, path, snippet, ranks? }[]
+// snippet : termes trouvés entre MARK_START et MARK_END (\u0002 / \u0003) ;
+// formatHit(hit, rich) les rend en [ ] ou en surlignage terminal
 ```
 
 ## Configuration
