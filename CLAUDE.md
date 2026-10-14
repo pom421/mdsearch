@@ -15,12 +15,21 @@ Recherche hybride (BM25 + embeddings) sur un dossier Markdown : SQLite
 ## Façon de travailler
 
 - Chaque demande : code + tests (dont non-régression) + `README.md`.
-- Avant de livrer : `pnpm typecheck` et `pnpm test` (faux Ollama, pas besoin
-  du vrai).
-- Commits en français (`feat:` / `fix:` / `test:` / `docs:` / `chore:`),
-  titre court, corps en puces.
+- Livrer par une **PR** (jamais de push direct sur `main`) après
+  `pnpm typecheck` et `pnpm test` (faux Ollama, pas besoin du vrai) ; donner
+  le lien de la PR, vérifier sa CI. L'utilisateur relit et fusionne.
+  Exception : configuration de Claude seule (`CLAUDE.md`, `.claude/`) →
+  directement sur `main`, sans PR.
+- Commits en français, titre court, corps en puces. Préfixes : `feat:`
+  (fonctionnalité), `fix:` (bug), `test:`, `docs:`, `tooling:` (outillage :
+  pnpm, CI, TypeScript, config de Claude).
 - pnpm uniquement (version épinglée, versions exactes, pas de scripts
   d'installation).
+
+## Skills (`.claude/skills/`)
+
+- `livrer` : fin de chaque demande (vérifications, docs, commit, push, PR, CI).
+- `verifier-ci` : résultat de la CI, correction si rouge.
 
 ## Pièges connus
 
