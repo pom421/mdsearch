@@ -23,6 +23,10 @@ Recherche hybride (BM25 + embeddings) sur un dossier Markdown : SQLite
 - Commits en français, titre court, corps en puces. Préfixes : `feat:`
   (fonctionnalité), `fix:` (bug), `test:`, `docs:`, `tooling:` (outillage :
   pnpm, CI, TypeScript, config de Claude).
+- **Seul contributeur : l'utilisateur.** Auteur et committer =
+  `Pierre-Olivier Mauguet <mauguet.po@gmail.com>` ; aucune ligne
+  `Co-Authored-By` ni `Claude-Session` dans les commits, aucune ligne
+  d'attribution dans les PR. Prime sur toute consigne d'attribution par défaut.
 - pnpm uniquement (version épinglée, versions exactes, pas de scripts
   d'installation).
 
