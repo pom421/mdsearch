@@ -1,0 +1,18 @@
+# Échoue si le pnpm lancé ne correspond pas au champ packageManager de
+# package.json (version épinglée + hash). npm/yarn sont bloqués par le
+# script preinstall (scripts/enforce-pnpm.cjs).
+pmOnFail: error
+
+# Refuse une version de Node hors du champ engines de package.json.
+engineStrict: true
+
+# Cooldown anti supply-chain : refuse toute version publiée il y a moins de
+# 7 jours (10080 min), le temps que l'écosystème repère un paquet compromis.
+minimumReleaseAge: 10080
+
+# Scripts d'installation (preinstall/postinstall…) des dépendances : aucun
+# autorisé. Ajouter ici, un par un, les seuls paquets qui en ont besoin.
+allowBuilds: {}
+
+# Versions exactes dans package.json (pas de ^) : une mise à jour est toujours explicite.
+savePrefix: ''

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Jeton GitHub en lecture seule : la CI n'a rien à écrire.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # corepack lit packageManager : même pnpm qu'en local, vérifié par hash.
+      - run: npm install -g corepack@latest && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # Tests sans Ollama : faux serveur intégré (test/helpers/mock-ollama.ts)
+      - run: pnpm test

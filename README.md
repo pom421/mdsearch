@@ -8,22 +8,32 @@ Tout tient dans un fichier SQLite. Conçu comme outil `search` pour un agent LLM
 - Mode `watch` : réindexe à chaque sauvegarde
 - Dégradation propre : sans Ollama → BM25 seul
 
-## Prérequis
+## Installation
 
-- Node ≥ 22.6 (≥ 23.6 : plus besoin de `--experimental-strip-types`)
-- [Ollama](https://ollama.com) + modèle d'embedding : `ollama pull bge-m3` (multilingue, bon en français)
-- Optionnel : sans Ollama, utiliser `--no-embed` (BM25 seul)
+1. **Node.js 22.18 ou plus** (24 conseillé, voir `.nvmrc`) : exécute le TypeScript sans compilation. Vérifier avec `node --version`.
+2. Activer pnpm (livré avec Node via corepack) :
+   ```sh
+   corepack enable
+   ```
+   Si `pnpm --version` échoue (corepack trop ancien pour pnpm 12) : `npm install -g corepack@latest && corepack enable`
+3. Installer (outils de dev uniquement : TypeScript et types) :
+   ```sh
+   pnpm install
+   ```
+4. [Ollama](https://ollama.com) + modèle d'embedding : `ollama pull bge-m3` (multilingue, bon en français). Sans Ollama : `--no-embed` (BM25 seul).
+
+pnpm uniquement : `npm install` / `yarn` sont bloqués (`scripts/enforce-pnpm.cjs`).
 
 ## Usage
 
 ```bash
-npm run mdsearch -- index ~/wiki                 # index incrémental (BM25 + vecteurs)
-npm run mdsearch -- index ~/wiki --rebuild       # repart de zéro
-npm run mdsearch -- index ~/wiki --no-embed      # BM25 seul, sans Ollama
-npm run mdsearch -- watch ~/wiki                 # réindexe à chaque sauvegarde
-npm run mdsearch -- search "automobile"          # hybride (défaut)
-npm run mdsearch -- search "lora" 5 --mode bm25  # bm25 | vector | hybrid
-npm run mdsearch -- optimize                     # compacte l'index FTS5 + VACUUM
+pnpm mdsearch index ~/wiki                 # index incrémental (BM25 + vecteurs)
+pnpm mdsearch index ~/wiki --rebuild       # repart de zéro
+pnpm mdsearch index ~/wiki --no-embed      # BM25 seul, sans Ollama
+pnpm mdsearch watch ~/wiki                 # réindexe à chaque sauvegarde
+pnpm mdsearch search "automobile"          # hybride (défaut)
+pnpm mdsearch search "lora" 5 --mode bm25  # bm25 | vector | hybrid
+pnpm mdsearch optimize                     # compacte l'index FTS5 + VACUUM
 ```
 
 Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
@@ -94,10 +104,20 @@ Réglages fins en tête de `src/mdsearch.ts` : taille des chunks (300 mots), tai
 ## Développement
 
 ```bash
-npm install       # TypeScript + types (dev uniquement)
-npm test          # 15 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
-npm run typecheck # tsc --strict
+pnpm typecheck   # TypeScript strict
+pnpm test        # 15 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
 ```
+
+**pnpm durci** (`pnpm-workspace.yaml`) :
+
+- Version de pnpm épinglée avec hash (`packageManager`), Node vérifié (`engines`)
+- Versions exactes dans `package.json` (pas de `^`) : toute mise à jour est explicite
+- `minimumReleaseAge` : refuse un paquet publié il y a moins de 7 jours (anti supply-chain)
+- Aucun script d'installation autorisé pour les dépendances
+
+**CI** (`.github/workflows/ci.yml`) : `pnpm typecheck` + `pnpm test` à chaque push sur `main` et chaque PR.
+
+**Claude Code sur le web** : le hook `.claude/hooks/session-start.sh` lance `scripts/setup-cloud.sh` (corepack + `pnpm install --frozen-lockfile`) au démarrage de chaque session cloud. Consignes : `CLAUDE.md`.
 
 ## Historique
 

@@ -1,5 +1,5 @@
 // Tests de bout en bout : on lance le CLI comme un utilisateur, contre un faux Ollama.
-// Lancer : npm test
+// Lancer : pnpm test
 import { test, describe, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -22,7 +22,7 @@ function run(args: string[], env: Record<string, string> = {}): Promise<RunResul
   return new Promise((ok) => {
     execFile(
       process.execPath,
-      ["--experimental-strip-types", "--no-warnings", CLI, ...args],
+      ["--disable-warning=ExperimentalWarning", CLI, ...args],
       { env: { ...process.env, ...env } },
       (error, out, err) => ok({ code: error ? Number(error.code ?? 1) : 0, out, err }),
     );

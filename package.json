@@ -3,21 +3,24 @@
   "version": "2.0.0",
   "description": "Recherche hybride (BM25 + embeddings) sur un dossier Markdown, avec SQLite et Ollama",
   "type": "module",
+  "private": true,
   "license": "MIT",
   "author": "Pierre-Olivier Mauguet <mauguet.po@gmail.com>",
-  "engines": {
-    "node": ">=22.6"
-  },
   "bin": {
     "mdsearch": "src/mdsearch.ts"
   },
   "scripts": {
-    "mdsearch": "node --experimental-strip-types --no-warnings src/mdsearch.ts",
-    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
-    "typecheck": "tsc"
+    "preinstall": "node scripts/enforce-pnpm.cjs",
+    "mdsearch": "node --disable-warning=ExperimentalWarning src/mdsearch.ts",
+    "typecheck": "tsc -p .",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.ts\""
   },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@12.4.2+sha512.08adc6613180275c7c9edada39dcf08c9c61ad4e7eaf330a4f3461f102b0f907423454d117f98e72d47fef0616070644d7bffc973a6a57f5090a6d7c368b07c9",
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "@types/node": "26.6.1",
+    "typescript": "7.0.2"
   }
 }

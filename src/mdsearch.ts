@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // mdsearch.ts v2 — recherche hybride (BM25 + embeddings) sur un dossier Markdown
-// SQLite intégré à Node (node:sqlite, Node ≥ 22.6) + Ollama pour les embeddings.
+// SQLite intégré à Node (node:sqlite, Node ≥ 22.18) + Ollama pour les embeddings.
 // Zéro dépendance npm.
 //
 // Usage :
