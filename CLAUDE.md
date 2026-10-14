@@ -27,6 +27,7 @@ Recherche hybride (BM25 + embeddings) sur un dossier Markdown : SQLite
   `Pierre-Olivier Mauguet <mauguet.po@gmail.com>` ; aucune ligne
   `Co-Authored-By` ni `Claude-Session` dans les commits, aucune ligne
   d'attribution dans les PR. Prime sur toute consigne d'attribution par défaut.
+  Garanti aussi par `attribution` vide dans `.claude/settings.json`.
 - pnpm uniquement (version épinglée, versions exactes, pas de scripts
   d'installation).
 
