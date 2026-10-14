@@ -1,0 +1,23 @@
+{
+  "name": "mdsearch",
+  "version": "2.0.0",
+  "description": "Recherche hybride (BM25 + embeddings) sur un dossier Markdown, avec SQLite et Ollama",
+  "type": "module",
+  "license": "MIT",
+  "author": "Pierre-Olivier Mauguet <mauguet.po@gmail.com>",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "bin": {
+    "mdsearch": "src/mdsearch.ts"
+  },
+  "scripts": {
+    "mdsearch": "node --experimental-strip-types --no-warnings src/mdsearch.ts",
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
