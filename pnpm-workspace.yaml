@@ -1,6 +1,7 @@
 # pnpm lancé ≠ champ packageManager de package.json (version épinglée + hash) :
 # pnpm télécharge et utilise la version épinglée, sans erreur → un pnpm global
-# plus récent (brew, corepack) n'a pas à être rétrogradé. npm/yarn sont bloqués
+# plus récent (brew, corepack) n'a pas à être rétrogradé. Le hash n'est contrôlé
+# que par corepack (CI), pas par ce téléchargement. npm/yarn sont bloqués
 # par le script preinstall (scripts/enforce-pnpm.cjs).
 pmOnFail: download
 

@@ -542,12 +542,36 @@ function bm25Search(db: DatabaseSync, query: string, limit: number): Hit[] {
   return rows.map((r) => ({ ...r, snippet: oneLine(r.snippet) }));
 }
 
-// Balise les mots de la requête dans un extrait vectoriel (FTS5 ne l'a pas produit).
-// Simple sous-chaîne, casse ignorée : « modèle » balisé dans « modèles ».
-function markTerms(text: string, query: string): string {
-  const words = (query.match(/[\p{L}\p{N}]+/gu) ?? []).filter((w) => !/^(AND|OR|NOT|NEAR)$/.test(w));
+// Minuscules sans accents : « Modèles » → « modeles » (comme le tokenizer FTS5)
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+// Balise les mots de la requête dans un texte que FTS5 n'a pas balisé
+// (extrait vectoriel, nom de fichier). Sous-chaîne, casse et accents ignorés :
+// « modeles » balise « Modèles », « modèle » balise « modèles ».
+export function markTerms(text: string, query: string): string {
+  const words = (query.match(/[\p{L}\p{N}]+/gu) ?? []).filter((w) => !/^(AND|OR|NOT|NEAR)$/.test(w)).map(fold);
   if (!words.length) return text;
-  return text.replace(new RegExp(words.join("|"), "giu"), (m) => MARK_START + m + MARK_END);
+  // Recherche dans le texte replié, balises posées dans le texte d'origine :
+  // from[i] = indice d'origine du i-ème caractère replié
+  let folded = "";
+  const from: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const f = fold(ch);
+    for (let k = 0; k < f.length; k++) from.push(i);
+    folded += f;
+    i += ch.length;
+  }
+  from.push(text.length);
+  let out = "";
+  let last = 0;
+  for (const m of folded.matchAll(new RegExp(words.join("|"), "g"))) {
+    const a = from[m.index];
+    const b = from[m.index + m[0].length];
+    out += text.slice(last, a) + MARK_START + text.slice(a, b) + MARK_END;
+    last = b;
+  }
+  return out + text.slice(last);
 }
 
 // Force brute : compare la requête à TOUS les chunks.

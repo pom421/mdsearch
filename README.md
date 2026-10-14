@@ -65,6 +65,7 @@ Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 - **Dans un terminal** : chemin **cliquable** (lien OSC 8 vers `file://…`, ⌘-clic
   dans iTerm2, Ghostty, WezTerm, VS Code…) et termes trouvés **surlignés** (gras jaune),
   dans l'extrait et dans le nom du fichier (utile quand le pattern n'est que là : fichier vide).
+  Casse et accents ignorés, comme la recherche : `modeles` surligne `Modèles.md`.
 - **Hors terminal** (tube, fichier, agent) : texte brut ci-dessus, termes entre `[ ]`.
 - `NO_COLOR=1` force le texte brut, `FORCE_COLOR=1` la sortie enrichie.
 
@@ -134,14 +135,16 @@ Réglages fins en tête de `src/mdsearch.ts` : taille des chunks (300 mots), tai
 
 ```bash
 pnpm typecheck   # TypeScript strict
-pnpm test        # 25 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
+pnpm test        # 28 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
 ```
 
 **pnpm durci** (`pnpm-workspace.yaml`) :
 
 - Version de pnpm épinglée avec hash (`packageManager`), Node vérifié (`engines`)
 - `pmOnFail: download` : un pnpm global d'une autre version (brew, corepack) télécharge
-  et utilise la version épinglée au lieu d'échouer → rien à faire à chaque montée de version
+  et utilise la version épinglée au lieu d'échouer → rien à faire à chaque montée de version.
+  Limite : ce téléchargement ne contrôle pas le hash de `packageManager` (seul corepack le fait,
+  donc la CI) ; pour le contrôler aussi en local, utiliser pnpm via corepack plutôt que brew.
 - Versions exactes dans `package.json` (pas de `^`) : toute mise à jour est explicite
 - `minimumReleaseAge` : refuse un paquet publié il y a moins de 7 jours (anti supply-chain)
 - Aucun script d'installation autorisé pour les dépendances

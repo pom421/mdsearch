@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startMockOllama, type MockOllama } from "./helpers/mock-ollama.ts";
-import { chunkMarkdown, formatHit, MARK_END, MARK_START } from "../src/mdsearch.ts";
+import { chunkMarkdown, formatHit, markTerms, MARK_END, MARK_START } from "../src/mdsearch.ts";
 
 const CLI = resolve(import.meta.dirname, "../src/mdsearch.ts");
 
@@ -64,6 +64,24 @@ describe("chunkMarkdown", () => {
   test("coupe un paragraphe géant par mots", () => {
     const giant = Array.from({ length: 700 }, (_, i) => `m${i}`).join(" ");
     assert.equal(chunkMarkdown(giant).length, 3); // 300 + 300 + 100
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("markTerms", () => {
+  const show = (t: string, q: string) => markTerms(t, q).replaceAll(MARK_START, "[").replaceAll(MARK_END, "]");
+
+  test("accents et casse ignorés, texte d'origine conservé", () => {
+    assert.equal(show("Les Modèles légers", "modeles"), "Les [Modèles] légers");
+    assert.equal(show("les modeles", "modèles"), "les [modeles]");
+  });
+
+  test("sous-chaîne, plusieurs mots, opérateurs FTS5 ignorés", () => {
+    assert.equal(show("modèles et bash", "modele OR bash*"), "[modèle]s et [bash]");
+  });
+
+  test("accent décomposé (NFD, ex : noms de fichiers macOS)", () => {
+    assert.equal(show("Mode\u0300les", "modeles"), "[Mode\u0300les]");
   });
 });
 
