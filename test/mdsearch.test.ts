@@ -81,6 +81,13 @@ describe("formatHit", () => {
     assert.ok(out.includes("\x1b[1m\x1b[33mbash\x1b[39m\x1b[22m"));
     assert.ok(out.endsWith(" [lien](x)")); // crochets du Markdown laissés tels quels
   });
+
+  test("terminal : pattern surligné dans le nom du fichier, pas dans les dossiers", () => {
+    const out = formatHit({ score: -1, path: "/bash/bash.md", snippet: "" }, true, "bash");
+    assert.ok(out.includes("\x1b\\/bash/\x1b[1m\x1b[33mbash\x1b[39m\x1b[22m.md\x1b]8;;"));
+    assert.ok(out.includes("file:///bash/bash.md")); // lien intact
+    assert.equal(formatHit({ score: -1, path: "/bash/bash.md", snippet: "" }, false, "bash"), "-1.0000 | /bash/bash.md | ");
+  });
 });
 
 // ---------------------------------------------------------------------------

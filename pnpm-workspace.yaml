@@ -1,7 +1,8 @@
-# Échoue si le pnpm lancé ne correspond pas au champ packageManager de
-# package.json (version épinglée + hash). npm/yarn sont bloqués par le
-# script preinstall (scripts/enforce-pnpm.cjs).
-pmOnFail: error
+# pnpm lancé ≠ champ packageManager de package.json (version épinglée + hash) :
+# pnpm télécharge et utilise la version épinglée, sans erreur → un pnpm global
+# plus récent (brew, corepack) n'a pas à être rétrogradé. npm/yarn sont bloqués
+# par le script preinstall (scripts/enforce-pnpm.cjs).
+pmOnFail: download
 
 # Refuse une version de Node hors du champ engines de package.json.
 engineStrict: true

@@ -51,7 +51,7 @@ Sans la commande globale : `pnpm mdsearch …` depuis `~/lab/mdsearch`, avec `--
 - **Un index par dossier, rangé dedans** : `index ~/wiki` crée `~/wiki/.mdsearch.db`.
 - `search` / `optimize` le retrouvent en **remontant** depuis `--dir`, sinon depuis le dossier courant (comme git cherche `.git`).
   Ex : `cd ~/wiki/projets && mdsearch search "lora"` → trouve `~/wiki/.mdsearch.db`.
-- `pnpm mdsearch` se lance depuis le dossier du projet (pnpm refuse ailleurs : version épinglée) → préciser `--dir`.
+- `pnpm mdsearch` se lance depuis le dossier du projet (script défini dans le `package.json` du projet) → préciser `--dir`.
   Chemins relatifs résolus depuis le dossier où la commande est tapée (`INIT_CWD`).
 - `MDSEARCH_DB=/chemin/base.db` impose un fichier précis (ex : plusieurs dossiers dans une même base).
 - Dossier de notes sous git : ajouter `.mdsearch.db*` à son `.gitignore`.
@@ -63,7 +63,8 @@ Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 ```
 
 - **Dans un terminal** : chemin **cliquable** (lien OSC 8 vers `file://…`, ⌘-clic
-  dans iTerm2, Ghostty, WezTerm, VS Code…) et termes trouvés **surlignés** (gras jaune).
+  dans iTerm2, Ghostty, WezTerm, VS Code…) et termes trouvés **surlignés** (gras jaune),
+  dans l'extrait et dans le nom du fichier (utile quand le pattern n'est que là : fichier vide).
 - **Hors terminal** (tube, fichier, agent) : texte brut ci-dessus, termes entre `[ ]`.
 - `NO_COLOR=1` force le texte brut, `FORCE_COLOR=1` la sortie enrichie.
 
@@ -133,12 +134,14 @@ Réglages fins en tête de `src/mdsearch.ts` : taille des chunks (300 mots), tai
 
 ```bash
 pnpm typecheck   # TypeScript strict
-pnpm test        # 21 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
+pnpm test        # 25 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
 ```
 
 **pnpm durci** (`pnpm-workspace.yaml`) :
 
 - Version de pnpm épinglée avec hash (`packageManager`), Node vérifié (`engines`)
+- `pmOnFail: download` : un pnpm global d'une autre version (brew, corepack) télécharge
+  et utilise la version épinglée au lieu d'échouer → rien à faire à chaque montée de version
 - Versions exactes dans `package.json` (pas de `^`) : toute mise à jour est explicite
 - `minimumReleaseAge` : refuse un paquet publié il y a moins de 7 jours (anti supply-chain)
 - Aucun script d'installation autorisé pour les dépendances

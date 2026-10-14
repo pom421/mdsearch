@@ -649,16 +649,20 @@ function richOutput(): boolean {
   return process.stdout.isTTY === true && process.stdout.hasColors();
 }
 
-export function formatHit(h: Hit, rich: boolean): string {
+// query : sert à surligner le pattern dans le nom du fichier (terminal seulement)
+export function formatHit(h: Hit, rich: boolean, query = ""): string {
   const ranks = h.ranks
     ? ` (bm25 ${h.ranks.bm25 ? "#" + h.ranks.bm25 : "–"}, vec ${h.ranks.vector ? "#" + h.ranks.vector : "–"})`
     : "";
   const marks = new RegExp(`${MARK_START}(.*?)${MARK_END}`, "gs");
+  // Hors terminal : chemin intact (un agent doit pouvoir l'ouvrir tel quel)
   if (!rich) return `${h.score.toFixed(4)}${ranks} | ${h.path} | ${h.snippet.replace(marks, "[$1]")}`;
+  const hl = (s: string) => s.replace(marks, (_, t: string) => styleText(["bold", "yellow"], t, { validateStream: false }));
+  // Nom du fichier surligné aussi : utile quand le pattern n'est que là (fichier vide, extrait vide)
+  const label = h.path.slice(0, h.path.length - basename(h.path).length) + hl(markTerms(basename(h.path), query));
   // OSC 8 : ESC ]8;;URL ESC \ texte ESC ]8;; ESC \ (texte normal si le terminal ne gère pas)
-  const link = `\x1b]8;;${pathToFileURL(h.path).href}\x1b\\${h.path}\x1b]8;;\x1b\\`;
-  const snippet = h.snippet.replace(marks, (_, t: string) => styleText(["bold", "yellow"], t, { validateStream: false }));
-  return `${h.score.toFixed(4)}${ranks} | ${link} | ${snippet}`;
+  const link = `\x1b]8;;${pathToFileURL(h.path).href}\x1b\\${label}\x1b]8;;\x1b\\`;
+  return `${h.score.toFixed(4)}${ranks} | ${link} | ${hl(h.snippet)}`;
 }
 
 function parseArgs(argv: string[]) {
@@ -724,7 +728,7 @@ async function main(): Promise<void> {
   } else if (cmd === "search" && arg) {
     const r = await search(arg, { limit: n ? Number(n) : 10, mode, dbPath: searchDb() });
     const rich = richOutput();
-    for (const h of r.hits) console.log(formatHit(h, rich));
+    for (const h of r.hits) console.log(formatHit(h, rich, arg));
   } else if (cmd === "optimize") {
     const db = searchDb();
     optimize(db);
