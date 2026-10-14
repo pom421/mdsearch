@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 // mdsearch.ts v2 — recherche hybride (BM25 + embeddings) sur un dossier Markdown
 // SQLite intégré à Node (node:sqlite, Node ≥ 22.18) + Ollama pour les embeddings.
 // Zéro dépendance npm.
@@ -18,7 +18,7 @@
 //   MDSEARCH_EMBED_MODEL  modèle d'embedding     (défaut bge-m3, multilingue)
 
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { existsSync, readdirSync, readFileSync, statSync, watch as fsWatch, type Stats } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, watch as fsWatch, type Stats } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -701,17 +701,18 @@ async function main(): Promise<void> {
   } else {
     console.error(
       "Usage :\n" +
-        "  node mdsearch.ts index <dossier> [--rebuild] [--no-embed]\n" +
-        "  node mdsearch.ts watch <dossier> [--no-embed]\n" +
-        '  node mdsearch.ts search "<requête>" [n] [--mode hybrid|bm25|vector] [--dir <dossier>]\n' +
-        "  node mdsearch.ts optimize [--dir <dossier>]",
+        "  mdsearch index <dossier> [--rebuild] [--no-embed]\n" +
+        "  mdsearch watch <dossier> [--no-embed]\n" +
+        '  mdsearch search "<requête>" [n] [--mode hybrid|bm25|vector] [--dir <dossier>]\n' +
+        "  mdsearch optimize [--dir <dossier>]",
     );
     process.exit(1);
   }
 }
 
-// Lancé directement (pas importé) ?
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Lancé directement (pas importé) ? realpath : via `pnpm add -g link:…`, argv[1] passe par
+// un lien symbolique alors que import.meta.url pointe vers le vrai fichier.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((e) => {
     console.error(`Erreur : ${(e as Error).message}`); // ex : syntaxe FTS5 invalide, Ollama absent
     process.exit(1);

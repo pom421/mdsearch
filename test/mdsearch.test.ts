@@ -3,7 +3,7 @@
 import { test, describe, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startMockOllama, type MockOllama } from "./helpers/mock-ollama.ts";
@@ -194,6 +194,18 @@ describe("CLI", () => {
     assert.match(r.out, /-0 supprimés/);
     const s = await cli(["search", "lora", "--mode", "bm25"]);
     assert.match(s.out, /notes\/x\.md/);
+  });
+
+  test("lancé via un lien symbolique (commande globale pnpm add -g link:…)", async () => {
+    const link = join(dir, "mdsearch-lien.ts");
+    symlinkSync(CLI, link);
+    const r = await new Promise<RunResult>((ok) =>
+      execFile(process.execPath, ["--disable-warning=ExperimentalWarning", link, "index", wiki, "--no-embed"],
+        { env: { ...process.env, ...env } as Record<string, string> },
+        (error, out, err) => ok({ code: error ? Number(error.code ?? 1) : 0, out, err })),
+    );
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /\+3 ajoutés/); // avant le correctif : sortie vide, rien n'était exécuté
   });
 
   test("optimize", async () => {
