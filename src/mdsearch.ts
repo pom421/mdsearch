@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 // mdsearch.ts v2 — recherche hybride (BM25 + embeddings) sur un dossier Markdown
 // SQLite intégré à Node (node:sqlite, Node ≥ 22.18) + Ollama pour les embeddings.
 // Zéro dépendance npm.
@@ -6,22 +6,25 @@
 // Usage :
 //   node mdsearch.ts index  <dossier> [--rebuild] [--no-embed]   # indexation incrémentale
 //   node mdsearch.ts watch  <dossier> [--no-embed]               # réindexe à chaque sauvegarde
-//   node mdsearch.ts search "<requête>" [n] [--mode hybrid|bm25|vector]
-//   node mdsearch.ts optimize                                    # compacte l'index FTS5
+//   node mdsearch.ts search "<requête>" [n] [--mode hybrid|bm25|vector] [--dir <dossier>]
+//   node mdsearch.ts optimize [--dir <dossier>]                  # compacte l'index FTS5
+//
+// Base : <dossier indexé>/.mdsearch.db (un index par dossier).
+// search/optimize la retrouvent en remontant depuis --dir ou le dossier courant (comme git avec .git).
 //
 // Variables d'environnement :
-//   MDSEARCH_DB           base SQLite            (défaut ./mdsearch.db)
+//   MDSEARCH_DB           base SQLite imposée    (remplace .mdsearch.db)
 //   OLLAMA_HOST           serveur Ollama         (défaut http://127.0.0.1:11434)
 //   MDSEARCH_EMBED_MODEL  modèle d'embedding     (défaut bge-m3, multilingue)
 
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { readdirSync, readFileSync, statSync, watch as fsWatch, type Stats } from "node:fs";
-import { basename, resolve, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, watch as fsWatch, type Stats } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 // --- Réglages ---
-const DB_PATH = process.env.MDSEARCH_DB ?? "mdsearch.db";
+export const DB_FILE = ".mdsearch.db"; // nom de la base, placée dans le dossier indexé
 const OLLAMA_HOST = (process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const EMBED_MODEL = process.env.MDSEARCH_EMBED_MODEL ?? "bge-m3";
 const SCHEMA_VERSION = 3; // v3 = ajout des chunks/embeddings (anciennes bases reconstruites)
@@ -91,6 +94,36 @@ function listMarkdown(dir: string): string[] {
 function extractTitle(path: string, body: string): string {
   const m = body.match(/^# (.+)$/m);
   return m ? m[1].trim() : basename(path, ".md");
+}
+
+// ============================================================================
+// Emplacement de la base
+// ============================================================================
+// Un index par dossier de notes, rangé dedans : <dossier>/.mdsearch.db.
+// MDSEARCH_DB, si défini, impose un fichier précis.
+
+// Base d'un dossier à indexer
+export function dbPathFor(dir: string): string {
+  return process.env.MDSEARCH_DB ? resolve(process.env.MDSEARCH_DB) : join(resolve(dir), DB_FILE);
+}
+
+// Base pour chercher : remonte depuis `from` jusqu'à trouver un .mdsearch.db
+// → marche depuis le dossier indexé ou n'importe quel sous-dossier.
+export function findDb(from = process.cwd()): string {
+  if (process.env.MDSEARCH_DB) {
+    const p = resolve(process.env.MDSEARCH_DB);
+    if (!existsSync(p)) throw new Error(`Base introuvable : ${p} (MDSEARCH_DB). Lancer d'abord index <dossier>`);
+    return p;
+  }
+  for (let d = resolve(from); ; d = dirname(d)) {
+    const p = join(d, DB_FILE);
+    if (existsSync(p)) return p;
+    if (dirname(d) === d) break; // racine atteinte
+  }
+  throw new Error(
+    `Aucun index ${DB_FILE} trouvé dans ${resolve(from)} ni au-dessus. ` +
+      `Lancer d'abord index <dossier>, ou préciser --dir <dossier indexé>`,
+  );
 }
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -288,7 +321,7 @@ export async function index(
   opts: { rebuild?: boolean; embed?: boolean; dbPath?: string } = {},
 ): Promise<IndexStats> {
   const withEmbed = opts.embed ?? true;
-  const db = openDb(opts.dbPath ?? DB_PATH, opts.rebuild ?? false);
+  const db = openDb(opts.dbPath ?? dbPathFor(dir), opts.rebuild ?? false);
   const root = resolve(dir);
   const stats: IndexStats = { added: 0, updated: 0, removed: 0, unchanged: 0, chunksEmbedded: 0, optimized: false };
 
@@ -426,7 +459,7 @@ function runOptimize(db: DatabaseSync): void {
   setMeta(db, "pending_changes", 0);
 }
 
-export function optimize(dbPath = DB_PATH): void {
+export function optimize(dbPath = findDb()): void {
   const db = openDb(dbPath, false);
   try {
     runOptimize(db);
@@ -560,10 +593,10 @@ function safeBm25(db: DatabaseSync, query: string, limit: number): Hit[] {
 
 export async function search(
   query: string,
-  opts: { limit?: number; mode?: Mode; dbPath?: string } = {},
+  opts: { limit?: number; mode?: Mode; dbPath?: string } = {}, // dbPath : défaut findDb()
 ): Promise<{ mode: Mode; hits: Hit[] }> {
   const limit = opts.limit ?? 10;
-  const db = new DatabaseSync(opts.dbPath ?? DB_PATH, { readOnly: true });
+  const db = new DatabaseSync(opts.dbPath ?? findDb(), { readOnly: true });
   try {
     const { n } = db.prepare("SELECT count(*) AS n FROM chunks WHERE file_id IN (SELECT id FROM files WHERE embed_model = ?)")
       .get(EMBED_MODEL) as { n: number };
@@ -597,22 +630,33 @@ function parseArgs(argv: string[]) {
   const flags = new Set<string>();
   const pos: string[] = [];
   let mode: Mode | undefined;
+  let dir: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--mode") {
+    if (a === "--dir") {
+      dir = argv[++i];
+      if (!dir) throw new Error("--dir attend un dossier");
+    } else if (a === "--mode") {
       const m = argv[++i];
       if (m !== "hybrid" && m !== "bm25" && m !== "vector") throw new Error(`--mode invalide : ${m}`);
       mode = m;
     } else if (a.startsWith("--")) flags.add(a);
     else pos.push(a);
   }
-  return { flags, pos, mode };
+  return { flags, pos, mode, dir };
 }
 
 async function main(): Promise<void> {
-  const { flags, pos, mode } = parseArgs(process.argv.slice(2));
+  const { flags, pos, mode, dir } = parseArgs(process.argv.slice(2));
   const [cmd, arg, n] = pos;
   const embedOpt = !flags.has("--no-embed");
+
+  // `pnpm mdsearch` lance le script depuis la racine du projet ;
+  // INIT_CWD = dossier où l'utilisateur a tapé la commande → chemins relatifs résolus depuis là.
+  const userCwd = process.env.INIT_CWD ?? process.cwd();
+  const userPath = (p: string) => resolve(userCwd, p);
+  if (process.env.MDSEARCH_DB) process.env.MDSEARCH_DB = userPath(process.env.MDSEARCH_DB);
+  const searchDb = () => findDb(dir ? userPath(dir) : userCwd);
 
   const fmt = (s: IndexStats) =>
     `+${s.added} ajoutés, ~${s.updated} modifiés, -${s.removed} supprimés, =${s.unchanged} inchangés` +
@@ -621,13 +665,15 @@ async function main(): Promise<void> {
 
   if (cmd === "index" && arg) {
     const t0 = performance.now();
-    const s = await index(arg, { rebuild: flags.has("--rebuild"), embed: embedOpt });
-    console.log(`${fmt(s)} (${Math.round(performance.now() - t0)} ms) → ${DB_PATH}`);
+    const root = userPath(arg);
+    const s = await index(root, { rebuild: flags.has("--rebuild"), embed: embedOpt });
+    console.log(`${fmt(s)} (${Math.round(performance.now() - t0)} ms) → ${dbPathFor(root)}`);
   } else if (cmd === "watch" && arg) {
     const time = () => new Date().toLocaleTimeString("fr-FR");
     let first = true;
+    const root = userPath(arg);
     const stop = await watch(
-      arg,
+      root,
       (s) => {
         // N'affiche que l'index initial et les vrais changements
         if (first || s.added + s.updated + s.removed + s.chunksEmbedded > 0) console.log(`[${time()}] ${fmt(s)}`);
@@ -635,13 +681,13 @@ async function main(): Promise<void> {
       },
       { embed: embedOpt },
     );
-    console.log(`Surveillance de ${resolve(arg)}… (Ctrl+C pour arrêter)`);
+    console.log(`Surveillance de ${root}… (Ctrl+C pour arrêter) → ${dbPathFor(root)}`);
     process.on("SIGINT", () => {
       stop();
       process.exit(0);
     });
   } else if (cmd === "search" && arg) {
-    const r = await search(arg, { limit: n ? Number(n) : 10, mode });
+    const r = await search(arg, { limit: n ? Number(n) : 10, mode, dbPath: searchDb() });
     for (const h of r.hits) {
       const ranks = h.ranks
         ? ` (bm25 ${h.ranks.bm25 ? "#" + h.ranks.bm25 : "–"}, vec ${h.ranks.vector ? "#" + h.ranks.vector : "–"})`
@@ -649,22 +695,24 @@ async function main(): Promise<void> {
       console.log(`${h.score.toFixed(4)}${ranks} | ${h.path} | ${h.snippet}`);
     }
   } else if (cmd === "optimize") {
-    optimize();
-    console.log(`Index optimisé → ${DB_PATH}`);
+    const db = searchDb();
+    optimize(db);
+    console.log(`Index optimisé → ${db}`);
   } else {
     console.error(
       "Usage :\n" +
-        "  node mdsearch.ts index <dossier> [--rebuild] [--no-embed]\n" +
-        "  node mdsearch.ts watch <dossier> [--no-embed]\n" +
-        '  node mdsearch.ts search "<requête>" [n] [--mode hybrid|bm25|vector]\n' +
-        "  node mdsearch.ts optimize",
+        "  mdsearch index <dossier> [--rebuild] [--no-embed]\n" +
+        "  mdsearch watch <dossier> [--no-embed]\n" +
+        '  mdsearch search "<requête>" [n] [--mode hybrid|bm25|vector] [--dir <dossier>]\n' +
+        "  mdsearch optimize [--dir <dossier>]",
     );
     process.exit(1);
   }
 }
 
-// Lancé directement (pas importé) ?
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Lancé directement (pas importé) ? realpath : via `pnpm add -g link:…`, argv[1] passe par
+// un lien symbolique alors que import.meta.url pointe vers le vrai fichier.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((e) => {
     console.error(`Erreur : ${(e as Error).message}`); // ex : syntaxe FTS5 invalide, Ollama absent
     process.exit(1);

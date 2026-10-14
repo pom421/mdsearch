@@ -21,20 +21,40 @@ Tout tient dans un fichier SQLite. Conçu comme outil `search` pour un agent LLM
    pnpm install
    ```
 4. [Ollama](https://ollama.com) + modèle d'embedding : `ollama pull bge-m3` (multilingue, bon en français). Sans Ollama : `--no-embed` (BM25 seul).
+5. Commande `mdsearch` utilisable de partout :
+   ```sh
+   pnpm setup                 # une seule fois : dossier des commandes globales dans le PATH (rouvrir le terminal)
+   pnpm add -g link:$PWD      # dans ~/lab/mdsearch : lien vers ce dossier, pas une copie
+   ```
+   Lien → une modification du code est prise en compte sans réinstaller. Désinstaller : `pnpm remove -g mdsearch`.
+   (pnpm 12 : `pnpm link` ne fait plus de lien global, d'où `add -g link:`.)
 
 pnpm uniquement : `npm install` / `yarn` sont bloqués (`scripts/enforce-pnpm.cjs`).
 
 ## Usage
 
 ```bash
-pnpm mdsearch index ~/wiki                 # index incrémental (BM25 + vecteurs)
-pnpm mdsearch index ~/wiki --rebuild       # repart de zéro
-pnpm mdsearch index ~/wiki --no-embed      # BM25 seul, sans Ollama
-pnpm mdsearch watch ~/wiki                 # réindexe à chaque sauvegarde
-pnpm mdsearch search "automobile"          # hybride (défaut)
-pnpm mdsearch search "lora" 5 --mode bm25  # bm25 | vector | hybrid
-pnpm mdsearch optimize                     # compacte l'index FTS5 + VACUUM
+mdsearch index ~/wiki                 # index incrémental (BM25 + vecteurs)
+mdsearch index ~/wiki --rebuild       # repart de zéro
+mdsearch index ~/wiki --no-embed      # BM25 seul, sans Ollama
+mdsearch watch ~/wiki                 # réindexe à chaque sauvegarde
+cd ~/wiki
+mdsearch search "automobile"          # hybride (défaut)
+mdsearch search "lora" 5 --mode bm25  # bm25 | vector | hybrid
+mdsearch optimize                     # compacte l'index FTS5 + VACUUM
 ```
+
+Sans la commande globale : `pnpm mdsearch …` depuis `~/lab/mdsearch`, avec `--dir ~/wiki` pour `search` / `optimize`.
+
+### Où est l'index ?
+
+- **Un index par dossier, rangé dedans** : `index ~/wiki` crée `~/wiki/.mdsearch.db`.
+- `search` / `optimize` le retrouvent en **remontant** depuis `--dir`, sinon depuis le dossier courant (comme git cherche `.git`).
+  Ex : `cd ~/wiki/projets && mdsearch search "lora"` → trouve `~/wiki/.mdsearch.db`.
+- `pnpm mdsearch` se lance depuis le dossier du projet (pnpm refuse ailleurs : version épinglée) → préciser `--dir`.
+  Chemins relatifs résolus depuis le dossier où la commande est tapée (`INIT_CWD`).
+- `MDSEARCH_DB=/chemin/base.db` impose un fichier précis (ex : plusieurs dossiers dans une même base).
+- Dossier de notes sous git : ajouter `.mdsearch.db*` à son `.gitignore`.
 
 Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 
@@ -56,8 +76,9 @@ Sortie hybride : `score (rang bm25, rang vecteur) | fichier | extrait`
 ```ts
 import { index, search } from "./src/mdsearch.ts";
 
-await index("/chemin/wiki");
-const { mode, hits } = await search("automobile", { limit: 5 });
+await index("/chemin/wiki"); // → /chemin/wiki/.mdsearch.db
+const { mode, hits } = await search("automobile", { limit: 5, dbPath: "/chemin/wiki/.mdsearch.db" });
+// sans dbPath : findDb() remonte depuis process.cwd()
 // hits : { score, path, snippet, ranks? }[]
 ```
 
@@ -65,7 +86,7 @@ const { mode, hits } = await search("automobile", { limit: 5 });
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `MDSEARCH_DB` | `./mdsearch.db` | Fichier SQLite |
+| `MDSEARCH_DB` | `<dossier indexé>/.mdsearch.db` | Impose un fichier SQLite |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Serveur Ollama |
 | `MDSEARCH_EMBED_MODEL` | `bge-m3` | Modèle d'embedding |
 
@@ -105,7 +126,7 @@ Réglages fins en tête de `src/mdsearch.ts` : taille des chunks (300 mots), tai
 
 ```bash
 pnpm typecheck   # TypeScript strict
-pnpm test        # 15 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
+pnpm test        # 21 tests, faux serveur Ollama intégré (pas besoin d'Ollama)
 ```
 
 **pnpm durci** (`pnpm-workspace.yaml`) :

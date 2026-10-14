@@ -3,7 +3,7 @@
 import { test, describe, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startMockOllama, type MockOllama } from "./helpers/mock-ollama.ts";
@@ -18,12 +18,20 @@ interface RunResult {
 }
 
 // Exécution asynchrone obligatoire : le faux Ollama tourne dans ce même process
-function run(args: string[], env: Record<string, string> = {}): Promise<RunResult> {
+// env : une valeur `undefined` retire la variable (ex : MDSEARCH_DB pour tester la base par défaut)
+function run(
+  args: string[],
+  env: Record<string, string | undefined> = {},
+  cwd?: string,
+): Promise<RunResult> {
+  const fullEnv = Object.fromEntries(
+    Object.entries({ ...process.env, ...env }).filter(([, v]) => v !== undefined),
+  ) as Record<string, string>;
   return new Promise((ok) => {
     execFile(
       process.execPath,
       ["--disable-warning=ExperimentalWarning", CLI, ...args],
-      { env: { ...process.env, ...env } },
+      { env: fullEnv, cwd },
       (error, out, err) => ok({ code: error ? Number(error.code ?? 1) : 0, out, err }),
     );
   });
@@ -71,7 +79,8 @@ describe("CLI", () => {
     mkdirSync(join(p, ".."), { recursive: true });
     writeFileSync(p, content);
   };
-  const cli = (args: string[], extra: Record<string, string> = {}) => run(args, { ...env, ...extra });
+  const cli = (args: string[], extra: Record<string, string | undefined> = {}, cwd?: string) =>
+    run(args, { ...env, ...extra }, cwd);
 
   before(async () => {
     ollama = await startMockOllama();
@@ -187,10 +196,76 @@ describe("CLI", () => {
     assert.match(s.out, /notes\/x\.md/);
   });
 
+  test("lancé via un lien symbolique (commande globale pnpm add -g link:…)", async () => {
+    const link = join(dir, "mdsearch-lien.ts");
+    symlinkSync(CLI, link);
+    const r = await new Promise<RunResult>((ok) =>
+      execFile(process.execPath, ["--disable-warning=ExperimentalWarning", link, "index", wiki, "--no-embed"],
+        { env: { ...process.env, ...env } as Record<string, string> },
+        (error, out, err) => ok({ code: error ? Number(error.code ?? 1) : 0, out, err })),
+    );
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /\+3 ajoutés/); // avant le correctif : sortie vide, rien n'était exécuté
+  });
+
   test("optimize", async () => {
     await cli(["index", wiki]);
     const r = await cli(["optimize"]);
     assert.equal(r.code, 0, r.err);
     assert.match(r.out, /Index optimisé/);
+  });
+  // --- Base dans le dossier indexé (sans MDSEARCH_DB) ---
+  const noDb = { MDSEARCH_DB: undefined, INIT_CWD: undefined };
+
+  test("base par défaut : <dossier>/.mdsearch.db, retrouvée depuis un sous-dossier", async () => {
+    const i = await cli(["index", wiki, "--no-embed"], noDb);
+    assert.equal(i.code, 0, i.err);
+    assert.ok(existsSync(join(wiki, ".mdsearch.db")));
+    assert.match(i.out, /wiki\/\.mdsearch\.db/);
+
+    // Lancé depuis wiki/sub : remonte jusqu'à wiki/.mdsearch.db (comme git avec .git)
+    const s = await cli(["search", "lora", "--mode", "bm25"], noDb, join(wiki, "sub"));
+    assert.equal(s.code, 0, s.err);
+    assert.match(s.out, /lora\.md/);
+  });
+
+  test("--dir désigne le dossier indexé", async () => {
+    await cli(["index", wiki, "--no-embed"], noDb);
+    const s = await cli(["search", "lora", "--dir", wiki, "--mode", "bm25"], noDb, dir);
+    assert.match(s.out, /lora\.md/);
+    const o = await cli(["optimize", "--dir", wiki], noDb, dir);
+    assert.match(o.out, /Index optimisé → .*wiki\/\.mdsearch\.db/);
+  });
+
+  test("deux dossiers = deux index séparés", async () => {
+    const other = join(dir, "notes");
+    mkdirSync(other);
+    writeFileSync(join(other, "x.md"), "# X\nlora\n");
+    await cli(["index", wiki, "--no-embed"], noDb);
+    await cli(["index", other, "--no-embed"], noDb);
+    const s = await cli(["search", "lora", "--mode", "bm25"], noDb, other);
+    assert.match(s.out, /notes\/x\.md/);
+    assert.doesNotMatch(s.out, /wiki\/lora\.md/);
+  });
+
+  test("aucun index trouvé : erreur claire", async () => {
+    const s = await cli(["search", "lora"], noDb, dir);
+    assert.equal(s.code, 1);
+    assert.match(s.err, /Aucun index \.mdsearch\.db trouvé/);
+    assert.match(s.err, /--dir/);
+  });
+
+  test("chemins relatifs résolus depuis INIT_CWD (pnpm lance depuis la racine du projet)", async () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), "ailleurs-"));
+    try {
+      // process lancé ailleurs, comme pnpm ; l'utilisateur a tapé la commande dans `dir`
+      const i = await cli(["index", "wiki", "--no-embed"], { MDSEARCH_DB: undefined, INIT_CWD: dir }, elsewhere);
+      assert.equal(i.code, 0, i.err);
+      assert.ok(existsSync(join(wiki, ".mdsearch.db")));
+      const s = await cli(["search", "lora", "--dir", "wiki", "--mode", "bm25"], { MDSEARCH_DB: undefined, INIT_CWD: dir }, elsewhere);
+      assert.match(s.out, /lora\.md/);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
   });
 });
