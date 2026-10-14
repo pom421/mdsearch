@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startMockOllama, type MockOllama } from "./helpers/mock-ollama.ts";
-import { chunkMarkdown } from "../src/mdsearch.ts";
+import { chunkMarkdown, formatHit, markTerms, MARK_END, MARK_START } from "../src/mdsearch.ts";
 
 const CLI = resolve(import.meta.dirname, "../src/mdsearch.ts");
 
@@ -64,6 +64,47 @@ describe("chunkMarkdown", () => {
   test("coupe un paragraphe géant par mots", () => {
     const giant = Array.from({ length: 700 }, (_, i) => `m${i}`).join(" ");
     assert.equal(chunkMarkdown(giant).length, 3); // 300 + 300 + 100
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("markTerms", () => {
+  const show = (t: string, q: string) => markTerms(t, q).replaceAll(MARK_START, "[").replaceAll(MARK_END, "]");
+
+  test("accents et casse ignorés, texte d'origine conservé", () => {
+    assert.equal(show("Les Modèles légers", "modeles"), "Les [Modèles] légers");
+    assert.equal(show("les modeles", "modèles"), "les [modeles]");
+  });
+
+  test("sous-chaîne, plusieurs mots, opérateurs FTS5 ignorés", () => {
+    assert.equal(show("modèles et bash", "modele OR bash*"), "[modèle]s et [bash]");
+  });
+
+  test("accent décomposé (NFD, ex : noms de fichiers macOS)", () => {
+    assert.equal(show("Mode\u0300les", "modeles"), "[Mode\u0300les]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("formatHit", () => {
+  const hit = { score: -1.5, path: "/notes/mon bash.md", snippet: `un ${MARK_START}bash${MARK_END} [lien](x)` };
+
+  test("texte brut : termes entre [ ], pas de code d'échappement", () => {
+    assert.equal(formatHit(hit, false), "-1.5000 | /notes/mon bash.md | un [bash] [lien](x)");
+  });
+
+  test("terminal : chemin cliquable (OSC 8) et terme surligné", () => {
+    const out = formatHit(hit, true);
+    assert.ok(out.includes("\x1b]8;;file:///notes/mon%20bash.md\x1b\\/notes/mon bash.md\x1b]8;;\x1b\\"));
+    assert.ok(out.includes("\x1b[1m\x1b[33mbash\x1b[39m\x1b[22m"));
+    assert.ok(out.endsWith(" [lien](x)")); // crochets du Markdown laissés tels quels
+  });
+
+  test("terminal : pattern surligné dans le nom du fichier, pas dans les dossiers", () => {
+    const out = formatHit({ score: -1, path: "/bash/bash.md", snippet: "" }, true, "bash");
+    assert.ok(out.includes("\x1b\\/bash/\x1b[1m\x1b[33mbash\x1b[39m\x1b[22m.md\x1b]8;;"));
+    assert.ok(out.includes("file:///bash/bash.md")); // lien intact
+    assert.equal(formatHit({ score: -1, path: "/bash/bash.md", snippet: "" }, false, "bash"), "-1.0000 | /bash/bash.md | ");
   });
 });
 
@@ -138,6 +179,18 @@ describe("CLI", () => {
     await cli(["index", wiki]);
     const r = await cli(["search", "lora", "1"]);
     assert.match(r.out, /\(bm25 #1, vec #1\) \| .*lora\.md/);
+  });
+
+  test("search : termes surlignés, [ ] hors terminal, liens avec FORCE_COLOR", async () => {
+    await cli(["index", wiki]);
+    let r = await cli(["search", "recette", "--mode", "bm25"]);
+    assert.match(r.out, /tarte\.md \| .*Une \[recette\] simple/);
+    r = await cli(["search", "recette", "1", "--mode", "vector"]); // extrait vectoriel : balisé aussi
+    assert.match(r.out, /\[recette\]/);
+    r = await cli(["search", "recette", "--mode", "bm25"], { FORCE_COLOR: "1" });
+    assert.match(r.out, /\x1b\]8;;file:\/\/.*tarte\.md\x1b\\/);
+    r = await cli(["search", "recette", "--mode", "bm25"], { FORCE_COLOR: "1", NO_COLOR: "1" });
+    assert.doesNotMatch(r.out, /\x1b/);
   });
 
   test("hybride : syntaxe FTS5 invalide → retente en mots simples", async () => {
