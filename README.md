@@ -16,6 +16,8 @@ Tout tient dans un fichier SQLite. Conçu comme outil `search` pour un agent LLM
    corepack enable
    ```
    Si `pnpm --version` échoue (corepack trop ancien pour pnpm 12) : `npm install -g corepack@latest && corepack enable`
+
+   Ou avec Homebrew : `corepack disable pnpm && brew install pnpm` (ne pas lancer `pnpm setup`, il casse l'installation Homebrew). La version doit être celle de `packageManager` dans `package.json`, sinon pnpm refuse de tourner dans le projet.
 3. Installer (outils de dev uniquement : TypeScript et types) :
    ```sh
    pnpm install
